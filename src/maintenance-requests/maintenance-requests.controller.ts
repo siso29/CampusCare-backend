@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   StreamableFile,
@@ -17,6 +18,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../generated/prisma/enums';
 import { CreateMaintenanceRequestDto } from './dto/create-maintenance-request.dto';
 import { ListMaintenanceRequestsDto } from './dto/list-maintenance-requests.dto';
+import { UpdateMaintenanceRequestStatusDto } from './dto/update-maintenance-request-status.dto';
 import { MaintenanceRequestsService } from './maintenance-requests.service';
 
 @Controller('maintenance-requests')
@@ -24,9 +26,8 @@ export class MaintenanceRequestsController {
   constructor(private readonly service: MaintenanceRequestsService) {}
 
   @Get('summary')
-  @Roles(UserRole.MAINTENANCE_STAFF, UserRole.ADMIN)
-  getSummary() {
-    return this.service.getSummary();
+  getSummary(@CurrentUser() user: AuthUser) {
+    return this.service.getSummary(user);
   }
 
   @Get('images/:filename')
@@ -53,6 +54,15 @@ export class MaintenanceRequestsController {
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.service.findOne(id, user);
+  }
+
+  @Patch(':id/status')
+  @Roles(UserRole.MAINTENANCE_STAFF, UserRole.ADMIN)
+  updateStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateMaintenanceRequestStatusDto,
+  ) {
+    return this.service.updateStatus(id, dto.status);
   }
 
   @Post()

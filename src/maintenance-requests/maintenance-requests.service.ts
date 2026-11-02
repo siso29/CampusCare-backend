@@ -116,25 +116,44 @@ export class MaintenanceRequestsService {
     };
   }
 
-  async getSummary() {
+  async getSummary(user: AuthUser) {
+    const where: Prisma.MaintenanceRequestWhereInput = canManageAllRequests(user)
+      ? {}
+      : { reporterId: user.id };
     const [total, pending, inProgress, resolved, highPriority] =
       await Promise.all([
-        this.prisma.maintenanceRequest.count(),
+        this.prisma.maintenanceRequest.count({ where }),
         this.prisma.maintenanceRequest.count({
-          where: { status: RequestStatus.PENDING },
+          where: { ...where, status: RequestStatus.PENDING },
         }),
         this.prisma.maintenanceRequest.count({
-          where: { status: RequestStatus.IN_PROGRESS },
+          where: { ...where, status: RequestStatus.IN_PROGRESS },
         }),
         this.prisma.maintenanceRequest.count({
-          where: { status: RequestStatus.RESOLVED },
+          where: { ...where, status: RequestStatus.RESOLVED },
         }),
         this.prisma.maintenanceRequest.count({
-          where: { priority: RequestPriority.HIGH },
+          where: { ...where, priority: RequestPriority.HIGH },
         }),
       ]);
 
     return { total, pending, inProgress, resolved, highPriority };
+  }
+
+  async updateStatus(id: string, status: RequestStatus) {
+    return this.prisma.$transaction(async (transaction) => {
+      const result = await transaction.maintenanceRequest.updateMany({
+        where: { id },
+        data: { status },
+      });
+      if (result.count === 0) {
+        throw new NotFoundException('Maintenance request not found');
+      }
+
+      return transaction.maintenanceRequest.findUniqueOrThrow({
+        where: { id },
+      });
+    });
   }
 
   async findAll(query: ListMaintenanceRequestsDto, user: AuthUser) {
