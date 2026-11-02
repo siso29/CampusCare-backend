@@ -51,9 +51,9 @@ The default API address is `http://localhost:3001/api`. The database-backed heal
 - `GET /api/maintenance-requests` — paginated list with `search`, `status`, `priority`, `category`, `sortBy`, and `sortOrder` filters
 - `GET /api/maintenance-requests/:id` — request details
 - `GET /api/maintenance-requests/summary` — database counts for the dashboard
-- `POST /api/maintenance-requests` — submit a request
+- `POST /api/maintenance-requests` — submit a request as JSON or `multipart/form-data`; multipart requests may include an optional `image` file (JPG, PNG, or WebP, up to 5 MB)
 
-The request body accepts `title`, `description`, `category`, `location`, and optional `priority`. Category, priority, and status values use uppercase enum names such as `WATER_SUPPLY`, `HIGH`, and `PENDING`. IDs, timestamps, and status are generated or controlled by the backend. Image upload is not implemented.
+The request body accepts `title`, `description`, `category`, `location`, and optional `priority`. Category, priority, and status values use uppercase enum names such as `WATER_SUPPLY`, `HIGH`, and `PENDING`. IDs, timestamps, and status are generated or controlled by the backend. Uploaded images are stored under the backend's `uploads/maintenance-requests` directory, ignored by Git, and served through the authenticated image URL returned in `imageUrl`. Only the request's student and maintenance staff or administrators can view an image.
 
 Request updates, status changes, deletion, and authentication are not exposed yet. Those operations require the authentication and role checks described in the project roadmap.
 

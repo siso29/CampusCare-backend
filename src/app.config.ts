@@ -14,7 +14,9 @@ export function configureApp(app: INestApplication): void {
     const origin = request.get('origin');
     if (!origin) return next();
 
-    const allowedOrigins = (process.env.FRONTEND_ORIGIN || 'http://localhost:3000')
+    const allowedOrigins = (
+      process.env.FRONTEND_ORIGIN || 'http://localhost:3000'
+    )
       .split(',')
       .map((value) => value.trim());
     if (!allowedOrigins.includes(origin)) {
