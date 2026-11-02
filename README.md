@@ -18,6 +18,7 @@ The required values are:
 - `SHADOW_DATABASE_URL` for `campuscare_shadow`
 - `PORT` (defaults to `3001`)
 - `FRONTEND_ORIGIN` (defaults to `http://localhost:3000`)
+- `JWT_SECRET`, a random value of at least 32 characters used to sign sessions
 
 ## Install and run
 

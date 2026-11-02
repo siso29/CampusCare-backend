@@ -5,6 +5,8 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/app.config';
 
+process.env.JWT_SECRET ??= 'test-only-jwt-secret-that-is-at-least-32-characters';
+
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
 

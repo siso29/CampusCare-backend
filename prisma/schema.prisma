@@ -34,6 +34,47 @@ enum RequestStatus {
   RESOLVED
 }
 
+enum UserRole {
+  STUDENT
+  MAINTENANCE_STAFF
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model User {
+  id           String               @id @default(cuid())
+  email        String               @unique
+  firstName    String               @map("first_name")
+  lastName     String               @map("last_name")
+  passwordHash String               @map("password_hash")
+  role         UserRole             @default(STUDENT)
+  status       AccountStatus        @default(ACTIVE)
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions     Session[]
+  requests     MaintenanceRequest[]
+
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
 model MaintenanceRequest {
   id          String          @id @default(cuid())
   title       String
@@ -43,11 +84,14 @@ model MaintenanceRequest {
   priority    RequestPriority @default(MEDIUM)
   status      RequestStatus   @default(PENDING)
   imageUrl    String?         @map("image_url")
+  reporterId  String?         @map("reporter_id")
   createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  reporter    User?           @relation(fields: [reporterId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([priority])
   @@index([createdAt])
+  @@index([reporterId])
   @@map("maintenance_requests")
 }

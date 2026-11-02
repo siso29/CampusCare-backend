@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { AuthUser } from '../auth/auth-user.interface';
 import { Prisma } from '../generated/prisma/client';
 import {
   RequestStatus,
@@ -23,6 +28,10 @@ function buildOrderBy(
     default:
       return { createdAt: direction };
   }
+}
+
+function canManageAllRequests(user: AuthUser): boolean {
+  return user.role === 'ADMIN' || user.role === 'MAINTENANCE_STAFF';
 }
 
 @Injectable()
@@ -50,12 +59,13 @@ export class MaintenanceRequestsService {
     return { total, pending, inProgress, resolved, highPriority };
   }
 
-  async findAll(query: ListMaintenanceRequestsDto) {
+  async findAll(query: ListMaintenanceRequestsDto, user: AuthUser) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const search = query.search?.trim();
 
     const where: Prisma.MaintenanceRequestWhereInput = {
+      ...(!canManageAllRequests(user) ? { reporterId: user.id } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.priority
         ? { priority: query.priority as RequestPriority }
@@ -94,7 +104,7 @@ export class MaintenanceRequestsService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: AuthUser) {
     const request = await this.prisma.maintenanceRequest.findUnique({
       where: { id },
     });
@@ -102,11 +112,17 @@ export class MaintenanceRequestsService {
     if (!request) {
       throw new NotFoundException('Maintenance request not found');
     }
+    if (!canManageAllRequests(user) && request.reporterId !== user.id) {
+      throw new ForbiddenException('You do not have access to this request');
+    }
 
     return request;
   }
 
-  create(dto: CreateMaintenanceRequestDto) {
+  create(dto: CreateMaintenanceRequestDto, user: AuthUser) {
+    if (user.role !== 'STUDENT') {
+      throw new ForbiddenException('Only students can submit maintenance requests');
+    }
     return this.prisma.maintenanceRequest.create({
       data: {
         title: dto.title,
@@ -114,6 +130,7 @@ export class MaintenanceRequestsService {
         category: dto.category,
         location: dto.location,
         priority: dto.priority ?? RequestPriority.MEDIUM,
+        reporterId: user.id,
       },
     });
   }

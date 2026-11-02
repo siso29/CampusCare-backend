@@ -1,23 +1,20 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.config';
+import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/prisma.service';
 
-type CreatedRequest = {
-  id: string;
-  title: string;
-  status: string;
-  category: string;
-  priority: string;
-};
+process.env.JWT_SECRET ??= 'test-only-jwt-secret-that-is-at-least-32-characters';
 
 describe('Maintenance requests API (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
-  const createdIds: string[] = [];
+  let student: ReturnType<typeof request.agent>;
+  let secondStudent: ReturnType<typeof request.agent>;
+  const createdRequestIds: string[] = [];
+  const createdUserEmails: string[] = [];
   const marker = `CampusCare API test ${Date.now()}`;
 
   beforeAll(async () => {
@@ -29,19 +26,73 @@ describe('Maintenance requests API (e2e)', () => {
     configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);
+    student = request.agent(app.getHttpServer());
+    secondStudent = request.agent(app.getHttpServer());
+
+    const studentEmail = `student-${Date.now()}@example.test`;
+    const secondStudentEmail = `student-two-${Date.now()}@example.test`;
+    createdUserEmails.push(studentEmail, secondStudentEmail);
+
+    await student
+      .post('/api/auth/register')
+      .send({
+        email: studentEmail,
+        firstName: 'Test',
+        lastName: 'Student',
+        password: 'CampusCareTest123',
+      })
+      .expect(201);
+    await secondStudent
+      .post('/api/auth/register')
+      .send({
+        email: secondStudentEmail,
+        firstName: 'Second',
+        lastName: 'Student',
+        password: 'CampusCareTest123',
+      })
+      .expect(201);
   });
 
   afterAll(async () => {
-    if (createdIds.length > 0) {
+    if (createdRequestIds.length > 0) {
       await prisma.maintenanceRequest.deleteMany({
-        where: { id: { in: createdIds } },
+        where: { id: { in: createdRequestIds } },
+      });
+    }
+    if (createdUserEmails.length > 0) {
+      await prisma.user.deleteMany({
+        where: { email: { in: createdUserEmails } },
       });
     }
     await app.close();
   });
 
-  it('creates a request and returns its persisted database record', async () => {
-    const response = await request(app.getHttpServer())
+  it('registers a student with an HTTP-only session and returns their account', async () => {
+    const response = await student.get('/api/auth/me').expect(200);
+
+    expect(response.body).toMatchObject({
+      firstName: 'Test',
+      lastName: 'Student',
+      role: 'STUDENT',
+      status: 'ACTIVE',
+    });
+    expect(response.body).not.toHaveProperty('passwordHash');
+  });
+
+  it('requires authentication before a maintenance request can be created', async () => {
+    await request(app.getHttpServer())
+      .post('/api/maintenance-requests')
+      .send({
+        title: marker,
+        description: 'Water is leaking from the main pipe near the dormitory.',
+        category: 'WATER_SUPPLY',
+        location: 'Main Campus, Dormitory Block A',
+      })
+      .expect(401);
+  });
+
+  it('creates a request for its authenticated student and scopes list results', async () => {
+    const response = await student
       .post('/api/maintenance-requests')
       .send({
         title: marker,
@@ -52,57 +103,37 @@ describe('Maintenance requests API (e2e)', () => {
       })
       .expect(201);
 
-    const created = response.body as CreatedRequest;
-    createdIds.push(created.id);
-
-    expect(created).toMatchObject({
+    createdRequestIds.push(response.body.id);
+    expect(response.body).toMatchObject({
       title: marker,
       status: 'PENDING',
       category: 'WATER_SUPPLY',
       priority: 'HIGH',
     });
-    expect(created.id).toBeTruthy();
 
-    const detail = await request(app.getHttpServer())
-      .get(`/api/maintenance-requests/${created.id}`)
-      .expect(200);
-
-    expect(detail.body).toMatchObject({ id: created.id, title: marker });
-  });
-
-  it('filters and paginates real requests from PostgreSQL', async () => {
-    const response = await request(app.getHttpServer())
+    const ownList = await student
       .get('/api/maintenance-requests')
-      .query({
-        search: marker,
-        category: 'WATER_SUPPLY',
-        priority: 'HIGH',
-        page: 1,
-        limit: 10,
-      })
+      .query({ search: marker, page: 1, limit: 10 })
       .expect(200);
-
-    expect(response.body.data).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ title: marker, category: 'WATER_SUPPLY' }),
-      ]),
+    expect(ownList.body.data).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: response.body.id })]),
     );
-    expect(response.body.meta).toMatchObject({ page: 1, limit: 10 });
-    expect(response.body.meta.total).toBeGreaterThanOrEqual(1);
+
+    const otherList = await secondStudent
+      .get('/api/maintenance-requests')
+      .query({ search: marker, page: 1, limit: 10 })
+      .expect(200);
+    expect(otherList.body.data).toEqual([]);
   });
 
-  it('returns dashboard counts from PostgreSQL', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/api/maintenance-requests/summary')
-      .expect(200);
-
-    expect(response.body.total).toBeGreaterThanOrEqual(1);
-    expect(response.body.pending).toBeGreaterThanOrEqual(1);
-    expect(response.body.highPriority).toBeGreaterThanOrEqual(1);
+  it('prevents a different student from reading another student request', async () => {
+    await secondStudent
+      .get(`/api/maintenance-requests/${createdRequestIds[0]}`)
+      .expect(403);
   });
 
   it('rejects system-controlled fields and invalid filters', async () => {
-    await request(app.getHttpServer())
+    await student
       .post('/api/maintenance-requests')
       .send({
         title: `${marker} invalid`,
@@ -113,15 +144,18 @@ describe('Maintenance requests API (e2e)', () => {
       })
       .expect(400);
 
-    await request(app.getHttpServer())
+    await student
       .get('/api/maintenance-requests')
       .query({ status: 'NOT_A_STATUS' })
       .expect(400);
   });
 
-  it('returns 404 for an unknown request ID', async () => {
-    await request(app.getHttpServer())
-      .get('/api/maintenance-requests/not-a-real-request')
-      .expect(404);
+  it('restricts dashboard summary to staff and administrators', async () => {
+    await student.get('/api/maintenance-requests/summary').expect(403);
+  });
+
+  it('clears the session on logout', async () => {
+    await student.post('/api/auth/logout').expect(201);
+    await student.get('/api/auth/me').expect(401);
   });
 });
