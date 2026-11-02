@@ -1,0 +1,53 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RequestCategory {
+  WATER_SUPPLY
+  ELECTRICITY
+  PLUMBING
+  CLEANING
+  CLASSROOM_EQUIPMENT
+  OTHER
+}
+
+enum RequestPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum RequestStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+}
+
+model MaintenanceRequest {
+  id          String          @id @default(cuid())
+  title       String
+  description String          @db.Text
+  category    RequestCategory
+  location    String
+  priority    RequestPriority @default(MEDIUM)
+  status      RequestStatus   @default(PENDING)
+  imageUrl    String?         @map("image_url")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+  @@map("maintenance_requests")
+}
